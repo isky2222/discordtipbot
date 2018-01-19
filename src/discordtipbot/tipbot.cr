@@ -2,7 +2,7 @@ class TipBot
   @db : DB::Database
 
   def initialize(@config : Config, @log : Logger)
-    @db = DB.open(@config.database_url)
+    @db = DB.open(@config.database_url + "?max_pool_size=100")
     @coin_api = CoinApi.new(@config, @log)
   end
 
@@ -13,7 +13,7 @@ class TipBot
 
     return "insufficient balance" if balance(from) < amount
 
-    tx = @db.exec("INSERT INTO transactions(memo, from_id, to_id, amount) VALUES ($1, $2, $3, $4);", memo, from, to, amount)
+    tx = @db.using_connection(&.exec("INSERT INTO transactions(memo, from_id, to_id, amount) VALUES ($1, $2, $3, $4);", memo, from, to, amount))
 
     if tx.rows_affected == 1
       @log.debug("#{@config.coinname_short}: Transfered #{amount} #{@config.coinname_full} from #{from} to #{to}")
@@ -40,7 +40,7 @@ class TipBot
 
     if tx = @coin_api.withdraw(address, amount, "Withdrawal for #{from}")
       memo = "withdrawal: #{address}; #{tx}"
-      @db.exec("INSERT INTO transactions(memo, from_id, to_id, amount) VALUES ($1, $2, 0, $3)", memo, from, amount + @config.txfee)
+      @db.using_connection(&.exec("INSERT INTO transactions(memo, from_id, to_id, amount) VALUES ($1, $2, 0, $3)", memo, from, amount + @config.txfee))
       @log.debug("#{@config.coinname_short}: Withdrew #{amount} from #{from} to #{address} in TX #{tx}")
     else
       @log.error("#{@config.coinname_short}: Failed to withdraw!")
@@ -67,7 +67,7 @@ class TipBot
     @log.debug("#{@config.coinname_short}: Attempting to get deposit address for #{user}")
     ensure_user(user)
 
-    address = @db.query_one("SELECT address FROM accounts WHERE userid=$1", user, &.read(String | Nil))
+    address = @db.using_connection(&.query_one("SELECT address FROM accounts WHERE userid=$1", user, &.read(String | Nil)))
     if address.nil?
       address = @coin_api.new_address
 
@@ -80,7 +80,7 @@ class TipBot
       WHERE userid = $2
       SQL
 
-      @db.exec(sql, address, user)
+      @db.using_connection(&.exec(sql, address, user))
       @log.debug("#{@config.coinname_short}: New address for #{user}: #{address}")
     end
     return address
@@ -100,39 +100,43 @@ class TipBot
   end
 
   def get_config(server : UInt64, memo : String)
-    case memo
-    when "soak"
-      @db.query_one("SELECT soak FROM config WHERE serverid = $1", server, &.read(Bool | Nil)) || false
-    when "mention"
-      @db.query_one("SELECT mention FROM config WHERE serverid = $1", server, &.read(Bool | Nil)) || false
-    when "rain"
-      @db.query_one("SELECT rain FROM config WHERE serverid = $1", server, &.read(Bool | Nil)) || false
-    when "contacted"
-      @db.query_one("SELECT contacted FROM config WHERE serverid = $1", server, &.read(Bool | Nil)) || false
-    else
-      false
+    @db.using_connection do |db|
+      case memo
+      when "soak"
+        db.query_one("SELECT soak FROM config WHERE serverid = $1", server, &.read(Bool | Nil)) || false
+      when "mention"
+        db.query_one("SELECT mention FROM config WHERE serverid = $1", server, &.read(Bool | Nil)) || false
+      when "rain"
+        db.query_one("SELECT rain FROM config WHERE serverid = $1", server, &.read(Bool | Nil)) || false
+      when "contacted"
+        db.query_one("SELECT contacted FROM config WHERE serverid = $1", server, &.read(Bool | Nil)) || false
+      else
+        false
+      end
     end
   end
 
   def update_config(memo : String, status : Bool, server : UInt64)
-    case memo
-    when "mention"
-      @db.exec("UPDATE config SET mention=$1 WHERE serverid=$2", status, server)
-    when "soak"
-      @db.exec("UPDATE config SET soak=$1 WHERE serverid=$2", status, server)
-    when "rain"
-      @db.exec("UPDATE config SET rain=$1 WHERE serverid=$2", status, server)
-    when "contacted"
-      @db.exec("UPDATE config SET contacted=$1 WHERE serverid=$2", status, server)
+    @db.using_connection do |db|
+      case memo
+      when "mention"
+        @db.exec("UPDATE config SET mention=$1 WHERE serverid=$2", status, server)
+      when "soak"
+        @db.exec("UPDATE config SET soak=$1 WHERE serverid=$2", status, server)
+      when "rain"
+        @db.exec("UPDATE config SET rain=$1 WHERE serverid=$2", status, server)
+      when "contacted"
+        @db.exec("UPDATE config SET contacted=$1 WHERE serverid=$2", status, server)
+      end
     end
   end
 
   def add_server(id : UInt64)
-    @db.exec("INSERT INTO config (serverid) SELECT $1 WHERE NOT EXISTS (SELECT serverid FROM config WHERE serverid = $1)", id)
+    @db.using_connection(&.exec("INSERT INTO config (serverid) SELECT $1 WHERE NOT EXISTS (SELECT serverid FROM config WHERE serverid = $1)", id))
   end
 
   def db_balance
-    @db.query_one("SELECT SUM (balance) FROM accounts", &.read(Float64))
+    @db.using_connection(&.query_one("SELECT SUM (balance) FROM accounts", &.read(Float64)))
   end
 
   def node_balance
@@ -150,13 +154,13 @@ class TipBot
       return unless details.is_a?(Hash(String, JSON::Type))
 
       if details["category"] == "receive"
-        @db.exec("INSERT INTO coin_transactions (txhash, status) SELECT $1, $2 WHERE NOT EXISTS (SELECT txhash FROM coin_transactions WHERE txhash=$1)", txhash, "new")
+        @db.using_connection(&.exec("INSERT INTO coin_transactions (txhash, status) SELECT $1, $2 WHERE NOT EXISTS (SELECT txhash FROM coin_transactions WHERE txhash=$1)", txhash, "new"))
       end
     end
   end
 
   def check_deposits
-    txlist = @db.query_all("SELECT txhash FROM coin_transactions WHERE status=$1", "new", &.read(String))
+    txlist = @db.using_connection(&.query_all("SELECT txhash FROM coin_transactions WHERE status=$1", "new", &.read(String)))
     return if txlist.empty?
 
     users = Array(UInt64).new
@@ -179,7 +183,7 @@ class TipBot
 
         next unless details["category"] == "receive"
 
-        query = @db.query_all("SELECT userid FROM accounts WHERE address=$1", details["address"], &.read(Int64 | Nil))
+        query = @db.using_connection(&.query_all("SELECT userid FROM accounts WHERE address=$1", details["address"], &.read(Int64 | Nil)))
         next if query.nil?
 
         update = update_coin_transaction(transaction, "never") if (query == [0] || query.empty?)
@@ -193,7 +197,7 @@ class TipBot
         next if userid.nil?
 
         db = @db.transaction do
-          @db.exec("INSERT INTO transactions(memo, from_id, to_id, amount) VALUES ($1, 0, $2, $3)", "deposit (#{transaction})", userid.to_u64, details["amount"])
+          @db.using_connection(&.exec("INSERT INTO transactions(memo, from_id, to_id, amount) VALUES ($1, 0, $2, $3)", "deposit (#{transaction})", userid.to_u64, details["amount"]))
           update_coin_transaction(transaction, "credited to #{userid}")
         end
         if db
@@ -224,7 +228,7 @@ class TipBot
       next unless category == "receive"
 
       # check if tx already in coin_transactions
-      exe = @db.query_all("SELECT txhash FROM coin_transactions WHERE txhash=$1", tx["txid"], &.read(String | Nil))
+      exe = @db.using_connection(&.query_all("SELECT txhash FROM coin_transactions WHERE txhash=$1", tx["txid"], &.read(String | Nil)))
       next unless exe.empty? || exe == [0]
 
       insert_tx(tx["txid"].to_s)
@@ -232,22 +236,24 @@ class TipBot
   end
 
   def get_high_balance(high_balance : Int32)
-    @db.query_all("SELECT userid FROM accounts WHERE balance > $1", high_balance, as: Int64)
+    @db.using_connection(&.query_all("SELECT userid FROM accounts WHERE balance > $1", high_balance, as: Int64))
   end
 
   private def delete_deposit_address(user : UInt64)
-    @db.exec("UPDATE accounts SET address=null WHERE userid=$1", user)
+    @db.using_connection(&.exec("UPDATE accounts SET address=null WHERE userid=$1", user))
   end
 
   private def update_coin_transaction(transaction : String, memo : String)
-    @db.exec("UPDATE coin_transactions SET status=$1 WHERE txhash=$2", memo, transaction)
+    @db.using_connection(&.exec("UPDATE coin_transactions SET status=$1 WHERE txhash=$2", memo, transaction))
   end
 
   private def ensure_user(user : UInt64)
     @log.debug("#{@config.coinname_short}: Ensuring user: #{user}")
-    if @db.query_all("SELECT count(*) FROM accounts WHERE userid = $1", user, &.read(Int64)) == [0]
-      @db.exec("INSERT INTO accounts(userid) VALUES ($1)", user)
-      @log.debug("#{@config.coinname_short}: Added user #{user}")
+    @db.using_connection do |db|
+      if db.query_all("SELECT count(*) FROM accounts WHERE userid = $1", user, &.read(Int64)) == [0]
+        db.exec("INSERT INTO accounts(userid) VALUES ($1)", user)
+        @log.debug("#{@config.coinname_short}: Added user #{user}")
+      end
     end
   end
 
@@ -261,10 +267,10 @@ class TipBot
     WHERE userid=$1;
     SQL
 
-    @db.exec(sql, id)
+    @db.using_connection(&.exec(sql, id))
   end
 
   private def balance(id : UInt64)
-    @db.query_one("SELECT balance FROM accounts WHERE userid=$1", id, &.read(Float64)) || 0.0
+    @db.using_connection(&.query_one("SELECT balance FROM accounts WHERE userid=$1", id, &.read(Float64))) || 0.0
   end
 end
