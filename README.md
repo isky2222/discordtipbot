@@ -2,7 +2,7 @@
 
 Highly configurable tip bot for the chat plattform discord. **DO NOT RUN THIS CODE UNLESS YOU KNOW WHAT YOU ARE DOING!**
 
-Instead of executing this code yourself, feel free to contact me at https://discord.gg/drPeXfP to discuss me hosting it for you.
+Instead of executing this code yourself, feel free to contact me at https://discord.gg/DBk6G4vto discuss me hosting it for you.
 
 If you collect some kind of bounty or donation(s), I'd appreciate you forwarding some of it after your hosting costs.
 
