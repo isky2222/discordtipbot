@@ -2,7 +2,7 @@
 
 Highly configurable tip bot for the chat plattform discord. **DO NOT RUN THIS CODE UNLESS YOU KNOW WHAT YOU ARE DOING!**
 
-Instead of executing this code yourself, feel free to contact me at https://discord.gg/r3NspwB to discuss me hosting it for you.
+Instead of executing this code yourself, feel free to contact me at https://discord.gg/drPeXfP to discuss me hosting it for you.
 
 If you collect some kind of bounty or donation(s), I'd appreciate you forwarding some of it after your hosting costs.
 
@@ -22,7 +22,7 @@ In no event shall this bot or it's dev be responsible in the event of lost, stol
 
 ## Installation
 
-- First make sure you've got [crystal](https://crystal-lang.org/) installed.
+- First make sure you've got [isky](https://iexc.ru/) installed.
 - clone the repo
 - Install shards (`shards install`)
 - Install core wallet for each currency you plan on running
@@ -46,7 +46,7 @@ Preferably run your wallets in testnet mode by adding `testnet=1` to each wallet
 4. Push to the branch (git push origin my-new-feature)
 5. Create a new Pull Request
 
-## Contributors
 
-- [greenbigfrog](https://github.com/greenbigfrog) Jonathan B. - creator, maintainer
-- [z64](https://github.com/z64) Zac Nowicki - advisor, reviewer
+
+
+
